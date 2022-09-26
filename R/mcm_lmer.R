@@ -188,8 +188,10 @@ mcm_lmer <- function(formula, data = NULL,
   trans.matrix = trans.matrix[!duplicated(trans.matrix),]
 
   # all interaction estimates and se's
-  ia_1 = broomExtra::tidy(model)$estimate[c(grep(twoway, broomExtra::tidy(model)$term ))]
-  names(ia_1) <- broomExtra::tidy(model)$term[c(grep(twoway, broomExtra::tidy(model)$term ))]
+  coefficienttable <- data.frame(term = parameters::model_parameters(model)$Parameter,
+                                 estimate = parameters::model_parameters(model)$Coefficient)
+  ia_1 = coefficienttable$estimate[c(grep(twoway, coefficienttable$term ))]
+  names(ia_1) <- coefficienttable$term[c(grep(twoway, coefficienttable$term ))]
   ia_2 = vcov(model)[c(grep(twoway,
                             rownames(vcov(model)))),c(grep(twoway, rownames(vcov(model))))]
 
@@ -218,7 +220,7 @@ mcm_lmer <- function(formula, data = NULL,
 
   # compute mobility effect significance
   # ask this residual things
-  mtp = pt(-abs(mtesti/mtse), (nrow(model@frame)-nrow( broomExtra::tidy(model) ) + 1) )*2 #p-values
+  mtp = pt(-abs(mtesti/mtse), (nrow(model@frame)-nrow( coefficienttable ) + 1) )*2 #p-values
   mtp = matrix(mtp, Orig,Desti)
 
   mtsig = rep('   ', Orig*Desti); mtsig[mtp<.05] = '*  '; mtsig[mtp<.01] = '** '; mtsig[mtp<.001] = '***'
@@ -229,10 +231,10 @@ mcm_lmer <- function(formula, data = NULL,
   # compute transformation matrix for three-way interactions -----
   # if age is continuous, there is no need to fill in the missed category
   threeway <- paste0("^",origin,"([0-9]*):",destination,"([0-9]*):",time,"$","|","^",time,":",origin,"([0-9]*):",destination,"([0-9]*)$")
-  ia3_1 = broomExtra::tidy(model)$estimate[stringr::str_which(broomExtra::tidy(model)$term,threeway)]
-  ia3_2 = vcov(model)[stringr::str_subset(broomExtra::tidy(model)$term,threeway),
-                      stringr::str_subset(broomExtra::tidy(model)$term,threeway)]
-  # broomExtra::tidy(model)[str_which(broomExtra::tidy(model)$term,threeway),]
+  ia3_1 = coefficienttable$estimate[stringr::str_which(coefficienttable$term,threeway)]
+  ia3_2 = vcov(model)[stringr::str_subset(coefficienttable$term,threeway),
+                      stringr::str_subset(coefficienttable$term,threeway)]
+  # parameters::Coefficient(model)[str_which(parameters::Coefficient(model)$term,threeway),]
   iaesti3 = as.vector(trans.matrix%*%ia3_1)
   iavcov3 = trans.matrix%*%ia3_2%*%t(trans.matrix)
 
@@ -256,7 +258,7 @@ mcm_lmer <- function(formula, data = NULL,
 
   # compute mobility effect significance
   # ask this residual things
-  mtp = pt(-abs(mtesti3/mtse3), (nrow(model@frame)-nrow(broomExtra::tidy(model)) + 1) )*2 #p-values
+  mtp = pt(-abs(mtesti3/mtse3), (nrow(model@frame)-nrow(coefficienttable) + 1) )*2 #p-values
   mtp3 = mtp = matrix(mtp, Orig,Desti)
 
   mtsig = rep('   ', Orig*Desti); mtsig[mtp<.05] = '*  '; mtsig[mtp<.01] = '** '; mtsig[mtp<.001] = '***'
