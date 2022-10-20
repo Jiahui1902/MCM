@@ -134,14 +134,22 @@ mcm_lmer <- function(formula, data = NULL,
   }
   mc$control <- control
   mc[[1]] <- quote(lme4::lFormula)
-  lmod <- eval(mc, parent.frame(1L))
+
+  data <- as.data.frame(data)
+  data[,origin] <- as.factor(data[,origin])
+  data[,destination] <- as.factor(data[,destination])
+  # lmod <- eval(mc, parent.frame(1L))
+  # mc$data <- as.symbol("data")
+  mc[[3]] <- as.symbol("data")
+  lmod <- eval(mc, data)
+  # lmod <- eval(mc, data, parent.frame())
   mcout$formula <- lmod$formula
   # added the interaction
   # mcout$formula <- update(mcout$formula,as.formula("~origin*destination +."))
 
   lmod$formula <- NULL
 
-  devfun <- do.call(mkLmerDevfun, c(lmod, list(start = start,
+  devfun <- do.call(lme4::mkLmerDevfun, c(lmod, list(start = start,
                                                verbose = verbose, control = control)))
   if (devFunOnly)
     return(devfun)
@@ -159,9 +167,8 @@ mcm_lmer <- function(formula, data = NULL,
   }
   cc <- checkConv(attr(opt, "derivs"), opt$par, ctrl = control$checkConv,
                   lbound = environment(devfun)$lower)
-  model <- mkMerMod(environment(devfun), opt, lmod$reTrms, fr = lmod$fr,
+  model <- lme4::mkMerMod(environment(devfun), opt, lmod$reTrms, fr = lmod$fr,
            mc = mcout, lme4conv = cc)
-
 
   # get the mobility effect
   data <- model@frame
@@ -182,6 +189,11 @@ mcm_lmer <- function(formula, data = NULL,
 
   # data <- dplyr::arrange(data,origin,destination)
   trans.matrix = model.matrix(as.formula(paste0("~",origin,"*",destination)),data)
+  # main effects
+  maino_trans.matrix = trans.matrix[,stringr::str_subset(colnames(trans.matrix), paste0("^",origin,"([0-9]*)$"))]
+  maino_trans.matrix = maino_trans.matrix[!duplicated(maino_trans.matrix),]
+  maind_trans.matrix = trans.matrix[,stringr::str_subset(colnames(trans.matrix), paste0("^",destination,"([0-9]*)$"))]
+  maind_trans.matrix = maind_trans.matrix[!duplicated(maind_trans.matrix),]
   # trans.matrix = model.matrix(as.formula(paste0("~",origin,"*",destination)),data[order(data[,c(origin)],data[,c(destination)]),])
   trans.matrix = trans.matrix[,stringr::str_subset(colnames(trans.matrix),twoway )]
   # trans.matrix = trans.matrix[,stringr::str_detect(colnames(trans.matrix),":")]
@@ -190,6 +202,36 @@ mcm_lmer <- function(formula, data = NULL,
   # all interaction estimates and se's
   coefficienttable <- data.frame(term = parameters::model_parameters(model)$Parameter,
                                  estimate = parameters::model_parameters(model)$Coefficient)
+  # main effects
+  maino_1 = coefficienttable$estimate[c(grep(paste0("^",origin,"[0-9]*$"), coefficienttable$term ))]
+  maino_2 = vcov(model)[c(grep(paste0("^",origin,"[0-9]*$"), rownames(vcov(model)))),c(grep(paste0("^",origin,"[0-9]*$"), rownames(vcov(model))))]
+  maind_1 = coefficienttable$estimate[c(grep(paste0("^",destination,"[0-9]*$"), coefficienttable$term ))]
+  maind_2 = vcov(model)[c(grep(paste0("^",destination,"[0-9]*$"), rownames(vcov(model)))),c(grep(paste0("^",destination,"[0-9]*$"), rownames(vcov(model))))]
+
+  maino_esti = as.vector(maino_trans.matrix%*%maino_1)
+  # maino_i = maino_trans.matrix%*%maino_2
+  # maino_i = maino_i%*%t(maino_trans.matrix)
+  # print(maino_i)
+  # print(as.matrix(maino_i))
+  # print(sqrt(diag(as.matrix(maino_i))))
+  # maino_vcov = sqrt(diag(as.matrix(maino_i)))
+  # print(maino_i)
+  maino_vcov = sqrt(diag(as.matrix(maino_trans.matrix%*%maino_2%*%t(maino_trans.matrix))))
+  # mtp_o = pt(-abs(maino_esti/maino_vcov), model$df.residual)*2 #p-values
+  # mtsig_o = rep('   ', Orig); mtsig_o[mtp_o<.05] = '*  '; mtsig_o[mtp_o<.01] = '** '; mtsig_o[mtp_o<.001] = '***'
+  maino = data.frame(main_effects_origin=maino_esti,se=maino_vcov)
+  # maino = data.frame(main_effects_origin=maino_esti)
+  rownames(maino) = paste0("Orig",1:nrow(maino))
+  maind_esti = as.vector(maind_trans.matrix%*%maind_1)
+  maind_vcov = sqrt(diag(as.matrix(maind_trans.matrix%*%maind_2%*%t(maind_trans.matrix))))
+  # mtp_d = pt(-abs(maind_esti/maind_vcov), temp6$df.residual)*2 #p-values
+  # mtsig_d = rep('   ', Desti); mtsig_d[mtp_d<.05] = '*  '; mtsig_d[mtp_d<.01] = '** '; mtsig_d[mtp_d<.001] = '***'
+  maind = data.frame(main_effects_destination=maind_esti,se=maind_vcov)
+  # maind = data.frame(main_effects_destination=maind_esti)
+  rownames(maind) = paste0("Desti",1:nrow(maind))
+
+
+  # for interactions
   ia_1 = coefficienttable$estimate[c(grep(twoway, coefficienttable$term ))]
   names(ia_1) <- coefficienttable$term[c(grep(twoway, coefficienttable$term ))]
   ia_2 = vcov(model)[c(grep(twoway,
@@ -309,6 +351,8 @@ mcm_lmer <- function(formula, data = NULL,
 
   diag(mtse3)  ='-'; diag(mtesti3)='-'; diag(mtp3)   ='-'; diag(mtsig3) ='-'
   list(model = model,
+       origin_main = maino,
+       destination_main = maind,
        estimates = mtesti,
        se = mtse,
        significance = mtsig,
